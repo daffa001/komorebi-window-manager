@@ -68,6 +68,7 @@ use windows::Win32::UI::HiDpi::DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2;
 use windows::Win32::UI::HiDpi::GetDpiForMonitor;
 use windows::Win32::UI::HiDpi::MDT_EFFECTIVE_DPI;
 use windows::Win32::UI::HiDpi::SetProcessDpiAwarenessContext;
+use windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
 use windows::Win32::UI::Input::KeyboardAndMouse::GetKeyState;
 use windows::Win32::UI::Input::KeyboardAndMouse::INPUT;
 use windows::Win32::UI::Input::KeyboardAndMouse::INPUT_0;
@@ -1439,10 +1440,7 @@ impl WindowsApi {
     }
 
     pub fn lbutton_is_pressed() -> bool {
-        let state = unsafe { GetKeyState(i32::from(VK_LBUTTON.0)) };
-        #[allow(clippy::cast_sign_loss)]
-        let actual = (state as u16) & 0x8000;
-        actual != 0
+        unsafe { GetAsyncKeyState(i32::from(VK_LBUTTON.0)) < 0 }
     }
 
     pub fn left_click() -> u32 {

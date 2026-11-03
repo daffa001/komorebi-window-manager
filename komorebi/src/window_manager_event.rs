@@ -7,6 +7,7 @@ use serde::Serialize;
 use crate::OBJECT_NAME_CHANGE_ON_LAUNCH;
 use crate::OBJECT_NAME_CHANGE_TITLE_IGNORE_LIST;
 use crate::REGEX_IDENTIFIERS;
+use crate::core::Rect;
 use crate::window::Window;
 use crate::window::should_act;
 use crate::winevent::WinEvent;
@@ -24,6 +25,7 @@ pub enum WindowManagerEvent {
     Uncloak(WinEvent, Window),
     MoveResizeStart(WinEvent, Window),
     MoveResizeEnd(WinEvent, Window),
+    MoveResizeEndFallback(Window, Rect),
     MouseCapture(WinEvent, Window),
     Maximize(WinEvent, Window),
     Unmaximize(WinEvent, Window),
@@ -72,6 +74,12 @@ impl Display for WindowManagerEvent {
             Self::MoveResizeEnd(winevent, window) => {
                 write!(f, "MoveResizeEnd (WinEvent: {winevent}, Window: {window})",)
             }
+            Self::MoveResizeEndFallback(window, started_from) => {
+                write!(
+                    f,
+                    "MoveResizeEndFallback (Window: {window}, From: {started_from:?})"
+                )
+            }
             Self::MouseCapture(winevent, window) => {
                 write!(f, "MouseCapture (WinEvent: {winevent}, Window: {window})",)
             }
@@ -103,6 +111,7 @@ impl WindowManagerEvent {
             | Self::Uncloak(_, window)
             | Self::MoveResizeStart(_, window)
             | Self::MoveResizeEnd(_, window)
+            | Self::MoveResizeEndFallback(window, _)
             | Self::MouseCapture(_, window)
             | Self::Maximize(_, window)
             | Self::Unmaximize(_, window)
@@ -128,6 +137,7 @@ impl WindowManagerEvent {
             WindowManagerEvent::Uncloak(_, _) => "Uncloak",
             WindowManagerEvent::MoveResizeStart(_, _) => "MoveResizeStart",
             WindowManagerEvent::MoveResizeEnd(_, _) => "MoveResizeEnd",
+            WindowManagerEvent::MoveResizeEndFallback(_, _) => "MoveResizeEndFallback",
             WindowManagerEvent::MouseCapture(_, _) => "MouseCapture",
             WindowManagerEvent::Maximize(_, _) => "Maximize",
             WindowManagerEvent::Unmaximize(_, _) => "Unmaximize",
@@ -155,6 +165,7 @@ impl WindowManagerEvent {
             | WindowManagerEvent::TitleUpdate(event, _) => Some(event.to_string()),
             WindowManagerEvent::Manage(_)
             | WindowManagerEvent::Unmanage(_)
+            | WindowManagerEvent::MoveResizeEndFallback(_, _)
             | WindowManagerEvent::Raise(_) => None,
         }
     }

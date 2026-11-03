@@ -299,7 +299,8 @@ impl WindowManager {
         match event {
             WindowManagerEvent::FocusChange(_, window)
             | WindowManagerEvent::Show(_, window)
-            | WindowManagerEvent::MoveResizeEnd(_, window) => {
+            | WindowManagerEvent::MoveResizeEnd(_, window)
+            | WindowManagerEvent::MoveResizeEndFallback(window, _) => {
                 if let Some(monitor_idx) = self.monitor_idx_from_window(window) {
                     // This is a hidden window apparently associated with COM support mechanisms (based
                     // on a post from http://www.databaseteam.org/1-ms-sql-server/a5bb344836fb889c.htm)
@@ -697,14 +698,23 @@ impl WindowManager {
 
                 self.live_resize_begin(window.hwnd, started_from);
             }
-            WindowManagerEvent::MoveResizeEnd(_, window) => {
+            WindowManagerEvent::MoveResizeEnd(_, window)
+            | WindowManagerEvent::MoveResizeEndFallback(window, _) => {
                 // the workspace is as it was when the user took hold, which is what the
                 // end of a drag is worked out from, with steps or without
                 let _snapping = self.live_resize_end();
 
                 // We need this because if the event ends on a different monitor,
                 // that monitor will already have been focused and updated in the state
-                let pending = *self.pending_move_op;
+                let pending = (*self.pending_move_op).or_else(|| {
+                    if let WindowManagerEvent::MoveResizeEndFallback(_, started_from) = event {
+                        self.known_hwnds
+                            .get(&window.hwnd)
+                            .map(|&(m_idx, w_idx)| (m_idx, w_idx, window.hwnd, started_from))
+                    } else {
+                        None
+                    }
+                });
                 // Always consume the pending move op whenever this event is handled
                 let pending_move_op = Arc::make_mut(&mut self.pending_move_op);
                 *pending_move_op = None;
