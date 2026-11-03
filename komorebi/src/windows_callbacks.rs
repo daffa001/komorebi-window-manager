@@ -38,25 +38,52 @@ fn moved_without_resizing(from: Rect, to: Rect) -> bool {
         && from.bottom == to.bottom
 }
 
-fn watch_for_missing_move_size_event(window: Window, started_from: Rect) {
+fn watch_for_missing_move_size_event(window: Window, started_from: Rect, pressed_at_focus: bool) {
     let generation = MOVE_SIZE_EVENTS.load(Ordering::SeqCst);
 
     std::thread::spawn(move || {
+        // A custom title bar can focus its window just before the mouse press is observable.
+        let press_deadline = Instant::now() + Duration::from_millis(500);
+        let mut pressed = pressed_at_focus;
+        while !pressed && Instant::now() < press_deadline {
+            pressed = WindowsApi::lbutton_is_pressed();
+            if !pressed {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        }
+
+        if !pressed {
+            tracing::debug!(hwnd = window.hwnd, "mouse drag fallback: no press after focus");
+            return;
+        }
+
         let deadline = Instant::now() + Duration::from_secs(30);
         while WindowsApi::lbutton_is_pressed() && Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(10));
         }
 
         if WindowsApi::lbutton_is_pressed() {
+            tracing::debug!(hwnd = window.hwnd, "mouse drag fallback: press timed out");
             return;
         }
 
         // Give a real move-size end event time to arrive before using the fallback.
         std::thread::sleep(Duration::from_millis(50));
-        if MOVE_SIZE_EVENTS.load(Ordering::SeqCst) == generation
-            && WindowsApi::foreground_window().ok() == Some(window.hwnd)
-            && WindowsApi::window_rect(window.hwnd)
-                .is_ok_and(|current| moved_without_resizing(started_from, current))
+        let native_generation = MOVE_SIZE_EVENTS.load(Ordering::SeqCst);
+        let foreground = WindowsApi::foreground_window().ok();
+        let current = WindowsApi::window_rect(window.hwnd).ok();
+        tracing::debug!(
+            hwnd = window.hwnd,
+            generation,
+            native_generation,
+            ?foreground,
+            ?started_from,
+            ?current,
+            "mouse drag fallback: checking after release"
+        );
+        if native_generation == generation
+            && foreground == Some(window.hwnd)
+            && current.is_some_and(|current| moved_without_resizing(started_from, current))
         {
             let _ = winevent_listener::event_tx().send(WindowManagerEvent::MoveResizeEndFallback(
                 window,
@@ -277,12 +304,24 @@ pub extern "system" fn win_event_hook(
         Some(event) => event,
     };
 
-    let fallback_origin = if matches!(winevent, WinEvent::SystemForeground)
-        && WindowsApi::lbutton_is_pressed()
-        && !crate::live_resize::is_dragging(window.hwnd)
-        && crate::reaper::HWNDS_CACHE.lock().contains_key(&window.hwnd)
-    {
-        WindowsApi::window_rect(window.hwnd).ok()
+    let fallback_origin = if matches!(winevent, WinEvent::SystemForeground) {
+        let pressed = WindowsApi::lbutton_is_pressed();
+        let dragging = crate::live_resize::is_dragging(window.hwnd);
+        let managed = crate::reaper::HWNDS_CACHE.lock().contains_key(&window.hwnd);
+        tracing::debug!(
+            hwnd = window.hwnd,
+            pressed,
+            dragging,
+            managed,
+            "mouse drag fallback: foreground event"
+        );
+        if managed && !dragging {
+            WindowsApi::window_rect(window.hwnd)
+                .ok()
+                .map(|rect| (rect, pressed))
+        } else {
+            None
+        }
     } else {
         None
     };
@@ -291,8 +330,8 @@ pub extern "system" fn win_event_hook(
         .send(event_type)
         .expect("could not send message on winevent_listener::event_tx");
 
-    if let Some(started_from) = fallback_origin {
-        watch_for_missing_move_size_event(window, started_from);
+    if let Some((started_from, pressed)) = fallback_origin {
+        watch_for_missing_move_size_event(window, started_from, pressed);
     }
 }
 
