@@ -119,7 +119,10 @@ mod drag_focus_tests {
         focus_dragged_window(&mut workspace, 2).unwrap();
         workspace.swap_containers(workspace.focused_container_idx(), 0);
 
-        assert_eq!(workspace.containers()[0].focused_window(), Some(&Window::from(2)));
+        assert_eq!(
+            workspace.containers()[0].focused_window(),
+            Some(&Window::from(2))
+        );
     }
 }
 
