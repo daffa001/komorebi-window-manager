@@ -58,8 +58,10 @@ fn watch_for_missing_move_size_event(window: Window, started_from: Rect) {
             && WindowsApi::window_rect(window.hwnd)
                 .is_ok_and(|current| moved_without_resizing(started_from, current))
         {
-            let _ = winevent_listener::event_tx()
-                .send(WindowManagerEvent::MoveResizeEndFallback(window, started_from));
+            let _ = winevent_listener::event_tx().send(WindowManagerEvent::MoveResizeEndFallback(
+                window,
+                started_from,
+            ));
         }
     });
 }
