@@ -53,7 +53,10 @@ fn watch_for_missing_move_size_event(window: Window, started_from: Rect, pressed
         }
 
         if !pressed {
-            tracing::debug!(hwnd = window.hwnd, "mouse drag fallback: no press after focus");
+            tracing::debug!(
+                hwnd = window.hwnd,
+                "mouse drag fallback: no press after focus"
+            );
             return;
         }
 
