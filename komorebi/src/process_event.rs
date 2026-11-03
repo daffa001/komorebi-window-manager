@@ -34,6 +34,7 @@ use crate::window_manager::WindowManager;
 use crate::window_manager_event::WindowManagerEvent;
 use crate::windows_api::WindowsApi;
 use crate::winevent::WinEvent;
+use crate::workspace::Workspace;
 use crate::workspace::WorkspaceLayer;
 
 fn should_skip_focus_change(foreground_hwnd: Option<isize>, window_hwnd: isize) -> bool {
@@ -48,6 +49,14 @@ fn should_skip_focus_change(foreground_hwnd: Option<isize>, window_hwnd: isize) 
 /// focus.
 fn should_refocus_after_destroy(foreground_hwnd: Option<isize>) -> bool {
     matches!(foreground_hwnd, None | Some(0))
+}
+
+fn focus_dragged_window(workspace: &mut Workspace, hwnd: isize) -> eyre::Result<()> {
+    if workspace.container_idx_for_window(hwnd).is_some() {
+        workspace.focus_container_by_window(hwnd)?;
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -87,6 +96,30 @@ mod destroy_focus_tests {
     #[test]
     fn defers_when_a_successor_took_the_foreground() {
         assert!(!should_refocus_after_destroy(Some(12345)));
+    }
+}
+
+#[cfg(test)]
+mod drag_focus_tests {
+    use super::focus_dragged_window;
+    use crate::container::Container;
+    use crate::window::Window;
+    use crate::workspace::Workspace;
+
+    #[test]
+    fn dragging_an_unfocused_window_swaps_the_dragged_tile() {
+        let mut workspace = Workspace::default();
+        for hwnd in [1, 2] {
+            let mut container = Container::default();
+            container.windows_mut().push_back(Window::from(hwnd));
+            workspace.add_container_to_back(container);
+        }
+
+        workspace.focus_container(0);
+        focus_dragged_window(&mut workspace, 2).unwrap();
+        workspace.swap_containers(workspace.focused_container_idx(), 0);
+
+        assert_eq!(workspace.containers()[0].focused_window(), Some(&Window::from(2)));
     }
 }
 
@@ -695,6 +728,9 @@ impl WindowManager {
                     self.window_management_behaviour(focused_monitor_idx, focused_workspace_idx);
 
                 let workspace = self.focused_workspace_mut()?;
+                // The drag may finish before Windows reports that the grabbed window has focus.
+                // Select its tile so the move uses that window instead of the previously focused one.
+                focus_dragged_window(workspace, window.hwnd)?;
                 let focused_container_idx = workspace.focused_container_idx();
                 let new_position = WindowsApi::window_rect(window.hwnd)?;
                 // Measure against the rect the window had when the drag started, which is what
